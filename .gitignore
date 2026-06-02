@@ -1,0 +1,45 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Cached market data — fetched fresh from Binance on first run
+data_cache/
+
+# Generated outputs — reproducible by running `python run.py`
+outputs/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Environment variables / secrets
+.env
+.env.*
+
+# Misc data artifacts
+*.parquet
+*.csv
+*.pkl
+*.joblib
