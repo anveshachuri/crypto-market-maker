@@ -1,8 +1,9 @@
 # Bayesian Market Maker — BTC/USDT
 
-A simulation framework for three market-making strategies — Glosten-Milgrom
-(1985), Avellaneda-Stoikov (2008), and a custom adaptive extension — grounded
-in real BTC/USDT market data from Binance.
+A simulation framework for six market-making strategies — Glosten-Milgrom
+(1985), Avellaneda-Stoikov (2008), a custom adaptive extension, a
+forecast-enhanced adaptive variant, a rule-based RL market maker, and a
+passive baseline — grounded in real BTC/USDT market data from Binance.
 
 **What this project is:** A quantitative simulation that combines real price
 history with a theoretically-motivated order flow model and Bayesian belief
@@ -26,7 +27,8 @@ src/
 ├── price_process.py  ReplayProcess (real prices) + HybridProcess (calibrated synthetic)
 ├── belief.py         Gaussian Bayesian belief + OFI toxicity detector
 ├── traders.py        Informed / uninformed / momentum trader population
-├── market_maker.py   GlostenMilgromMM, AvellanedaStoikovMM, AdaptiveMM, PassiveMM
+├── market_maker.py   GlostenMilgromMM, AvellanedaStoikovMM, AdaptiveMM, PassiveMM,
+│                     ForecastAdaptiveMM, RLMarketMaker
 ├── simulation.py     Episode runner, P&L accounting identity, drawdown tracking
 ├── analysis.py       Regime analysis, strategy comparison, alpha sweep
 ├── statistics.py     Bootstrap CIs, Sortino, CVaR, fill calibration, OFI test, OOS
@@ -295,25 +297,33 @@ the model assumption.
 
 ## Empirical Findings & Interpretation
 
+Results are based on 20 episodes of 500 steps each on real Binance BTC/USDT data.
+
+| Strategy | Mean PnL | Sharpe | Sortino | Fill% |
+|----------|----------|--------|---------|-------|
+| Passive-MM | $1,352 | 2.09 | 3.99 | 35.6% |
+| Glosten-Milgrom | $1,464 | 1.96 | 4.06 | 44.5% |
+| Avellaneda-Stoikov | $1,487 | 1.95 | 4.08 | 44.1% |
+| Adaptive-MM | $1,380 | 2.93 | 5.89 | 13.7% |
+| Forecast-Adaptive | $1,366 | 2.90 | 6.01 | 14.3% |
+| RL-MarketMaker | $1,488 | 1.97 | 4.10 | 43.2% |
+
 The headline result on this BTC/USDT sample is deliberately understated, and that
 is the point. Three findings define it:
 
 | Finding | Observed result | What it means |
 |---------|-----------------|---------------|
-| Forecast signal adds little | Forecast-Adaptive beats Adaptive-MM by ~**+$13** mean PnL (~**60%** win rate across episodes) | The ML return forecast is real but marginal; it nudges quotes rather than driving them |
-| OFI predicts, barely | Spearman **rho ≈ 0.055**, statistically significant but economically negligible | Order-flow toxicity is a genuine signal at this frequency, but a tiny one |
-| Complexity ≈ simplicity | Adaptive / Forecast / RL do **not materially outperform** the AS and passive benchmarks on this sample | The adaptive layers are theoretically motivated but capture little exploitable edge here |
+| Adaptive dominates risk-adjusted | Adaptive-MM achieves best Sharpe (2.93) vs Passive baseline (2.09); Forecast-Adaptive achieves best Sortino (6.01) | The adaptive layers reduce variance and adverse selection exposure more than they increase raw PnL |
+| Forecast signal adds little | Forecast-Adaptive trails Adaptive-MM by **-$14** mean PnL (**20% win rate** across 20 episodes) | The LightGBM return forecast (rank-IC = 0.039) is a real but marginal signal; it nudges quotes rather than driving them |
+| OFI predicts, modestly | Spearman **ρ = 0.074**, **p < 0.001**, n = 4,950 | Order-flow toxicity is a statistically significant but economically small predictor of adverse selection at lag-5 |
 
-**Why these weak results are a feature, not a bug.** High-frequency return
+**Why the weak forecast result is a feature, not a bug.** High-frequency return
 predictability in liquid crypto is small by nature: the microstructure literature
 (e.g. Bouchaud et al. 2018) puts achievable information coefficients in the
-~0.02–0.06 range at minute horizons, and any genuine edge is competed away by
-faster participants. A simulation that produced large, clean alpha from a
-1-minute LightGBM forecast or an OFI skew would be evidence of a leak — look-ahead
-in features, train/inference mismatch, or an unrealistic fill model — not of a
-profitable strategy. The numbers above are consistent with an efficient market in
-which a passive market maker already captures most of the available spread, and
-the adaptive layers contribute second-order refinements.
+~0.02–0.08 range at minute horizons, and any genuine edge is competed away by
+faster participants. Our rank-IC of 0.039 sits within this range. A simulation
+that produced large, clean alpha from a 1-minute LightGBM forecast would be
+evidence of a data leak or unrealistic fill model — not of a profitable strategy.
 
 **What the project does and does not claim.** It does *not* claim a deployable
 edge. It claims a correct, defensible research pipeline: real Binance data with
@@ -321,9 +331,10 @@ verified provenance, identical train/inference feature definitions (regression-
 tested), finite and economically bounded PnL, and statistical tests whose textual
 interpretation is derived directly from the p-value sign and effect size so that
 significance is never conflated with economic importance. The honest conclusion —
-*these signals exist but are economically small, and sophistication does not beat
-simplicity on this sample* — is the kind of result a careful quant researcher
-should expect and report, and it is reported here without inflation.
+*these signals exist but are economically small, and the Adaptive strategy's
+risk-adjusted superiority comes from variance reduction rather than alpha
+generation* — is the kind of result a careful quant researcher should expect
+and report, and it is reported here without inflation.
 
 **Caveats that bound the conclusion.** Results are sample- and period-specific;
 a single BTC/USDT window is not representative of all regimes. The adverse-selection
@@ -378,7 +389,7 @@ small by construction (verified in `test_analysis.py::test_pnl_decomposition_ide
 | `episode_summary.csv` | Per-episode metrics for Adaptive-MM |
 | `pnl_decomposition.csv` | Mean/std of P&L components |
 | `regime_performance.csv` | Metrics by market regime |
-| `strategy_comparison.csv` | GM vs AS vs Adaptive summary |
+| `strategy_comparison.csv` | All six strategies summary |
 | `strategy_t_tests.csv` | Pairwise Welch t-tests |
 | `risk_metrics.csv` | Sharpe, Sortino, CVaR, VaR, drawdown with CIs |
 | `ofi_predictive_test.csv` | OFI→adv. sel. Spearman test results |
@@ -416,7 +427,9 @@ re-run once (e.g. `python run.py --no-cache`) to refresh and attribute it.
 1. **Synthetic order flow**: informed/uninformed labels are model draws. Real
    informed flow identification requires Lee-Ready or similar algorithms.
 2. **Fill model**: exponential decay is a tractable approximation; real fills
-   depend on queue priority, latency, and partial fills.
+   depend on queue priority, latency, and partial fills. The empirical fill_decay
+   (0.33) is 4× lower than the model assumption (1.36), suggesting fills occur
+   more frequently at wide spreads than the model predicts.
 3. **Single venue**: Binance spot only. Real crypto MMs face cross-venue
    arbitrage and inventory correlation across assets.
 4. **No transaction costs**: exchange fees (~0.02–0.05% taker) are excluded.
